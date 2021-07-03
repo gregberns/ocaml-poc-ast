@@ -30,6 +30,11 @@ type uniop =
 
 type id = string
 
+type associative_type = 
+| AssocLeft
+| AssocRight
+| AssocNone
+
 type expr = 
 | Var of string
 | Int of int
@@ -202,6 +207,12 @@ Complement Laws
 *)
 
 let rec simplify e =
+    let has_associative_type e : associative_type =
+        match e with
+        | Binop (o, Binop (o2, e1, e2), e3) -> AssocRight
+        | Binop (o, e1, Binop (o2, e2, e3)) -> AssocLeft
+        | _ -> AssocNone
+    in
     (* A left-associative operator is one for which x A y A z is parsed as (x A y) A z. *)
     let helper_left_associative_operator e = 
         match e with
@@ -236,90 +247,44 @@ let rec simplify e =
             if e1 = e2 then e1 else e
         | _ -> e
     in
-    let rec simp i e =
-        if i = 10 then 
-            e 
-        else
-            (* let j = i + 1 in *)
-            
-            (* Associative :: A + (B + C) = (A + B) + C  *)
-            (* let rule_associative simplify j e =
-                let f = simplify j (helper_left_associative_operator e) in
-                let g = simplify j (helper_right_associative_operator f) in
-                match g with
-                | Binop(_, Var _, Var _) -> g
-                | _ -> e
-            in
-            (* Commutative :: A+B = B+A  *)
-            let rule_commutative simplify j e = 
-                let f = simplify j (helper_left_commutative_operator e) in
-                let g = simplify j (helper_right_commutative_operator f) in
-                match g with
-                | Binop(_, Var _, Var _) -> g
-                | _ -> e
-            in
-            let basic_simplify j e =
-                let e = rule_idempotent j e in
-                match e with
-                | Binop (o, e1, e2) -> 
-                    simp j (Binop (o, (simp j e1), (simp j e2)))
-                | _ -> e
-            in
-            let advanced_simplify j e =
-                match e with
-                | Binop (o, Binop (o2, Var a, Var b), Var c)
-                | Binop (o, Var a, Binop (o2, Var b, Var c)) ->
-                (* | Binop (o, Binop (o2, Var a, Var b), Binop (o3, Var c, Var d)) -> *)
-                    (rule_associative (basic_simplify j) j
-                        (rule_commutative (basic_simplify j) j
-                            (rule_associative (basic_simplify j) j
-                                (rule_commutative (basic_simplify j) j e))))
-                                
-                (* | Binop (o, e1, e2) ->  *)
-                | _ -> e
-            in
-            advanced_simplify j (basic_simplify j e) *)
-            
-
-
-
-
-            let rule_associative (simplify: expr -> expr) e =
-                let f = simplify (helper_left_associative_operator e) in
-                let g = simplify (helper_right_associative_operator f) in
-                match g with
-                | Binop(_, Var _, Var _) -> g
-                | _ -> e
-            in
-            (* Commutative :: A+B = B+A  *)
-            let rule_commutative simplify e = 
-                let f = simplify (helper_left_commutative_operator e) in
-                let g = simplify (helper_right_commutative_operator f) in
-                match g with
-                | Binop(_, Var _, Var _) -> g
-                | _ -> e
-            in
-            
-            let rec walk f e =
-                match e with 
-                | Binop (op, e1, e2) ->
-                    let e1r = walk f e1 in
-                    let e2r = walk f e2 in
-                    f (Binop (op, e1r, e2r))
-                | _ -> e
-            in
-            let run_rules (e: expr) : expr = 
-                rule_idempotent e
-            in
-            let rec simpl (e: expr) : expr =
-                let a = run_rules e in
-                let b = (rule_associative run_rules) a in
-                let c = (rule_commutative run_rules) b in
-                if e = c then e else simpl c
-            in
-            walk simpl e
+    (* Associative :: A + (B + C) = (A + B) + C  *)
+    let rule_associative (simplify: expr -> expr) e =
+        (* let t = has_associative_type e in *)
+        let f = simplify (helper_left_associative_operator e) in
+        let g = simplify (helper_right_associative_operator f) in
+        match g with
+        | Binop(_, Var _, Var _) -> g
+        | _ -> e
     in
-    simp 1 e
+    (* Commutative :: A+B = B+A  *)
+    let rule_commutative simplify e = 
+        let f = simplify (helper_left_commutative_operator e) in
+        let g = simplify (helper_right_commutative_operator f) in
+        match g with
+        | Binop(_, Var _, Var _) -> g
+        | _ -> e
+    in
+    
+    let rec walk f e =
+        (* print_endline (to_string e); *)
+        match e with 
+        | Binop (op, e1, e2) ->
+            let e1r = walk f e1 in
+            let e2r = walk f e2 in
+            f (Binop (op, e1r, e2r))
+        | _ -> e
+    in
+    let run_rules (e: expr) : expr = 
+        rule_idempotent e
+    in
+    let rec simpl (e: expr) : expr =
+        let a = run_rules e in
+        let b = (rule_associative run_rules) a in
+        let c = (rule_commutative run_rules) b in
+        if e = c then e else simpl c
+    in
+    walk simpl e
+in
 
 (* 
 New Strategies:
@@ -328,145 +293,156 @@ New Strategies:
 * Use a quick check style strategy to figure out what rule order to use and simplify the tree
 *)
 
+let single_test () = 
+    (* B && A && A  *)
+    let e = Binop (And, Binop (And, Var "b", Var "a"), Var "a") in
+    assert_equal_str "Associative: b && a && a" ("b && a") (to_string (simplify e));
+in
+single_test ();
 
-(* A && A && B  *)
-let e = Binop (And, Binop (And, Var "a", Var "a"), Var "b");;
-assert_equal_str "Associative: a && a && b" ("a && b") (to_string (simplify e));;
-(* B && A && A  *)
-let e = Binop (And, Binop (And, Var "b", Var "a"), Var "a");;
-assert_equal_str "Associative: b && a && a" ("b && a") (to_string (simplify e));;
-(* A && A && B  *)
-let e = Binop (And, Var "a", Binop (And, Var "a", Var "b"));;
-assert_equal_str "Associative: a && a && b" ("a && b") (to_string (simplify e));;
-(* A && B && A  *)
-let e = Binop (And, Binop (And, Var "a", Var "b"), Var "a");;
-assert_equal_str "Commutative: a && b && a" ("b && a") (to_string (simplify e));;
-(* A && B || A  *)
-let e = Binop (Or, Binop (And, Var "a", Var "b"), Var "a");;
-assert_equal_str "Commutative: a && b || a" ("b || a") (to_string (simplify e));;
-(* (A && B) && (A && B) *)
-let e = Binop (And, Binop (And, Var "a", Var "b"), Binop (And, Var "a", Var "b"));;
-assert_equal_str "(a && b) && (a && b)" ("a && b") (to_string (simplify e));;
-(* (A && B) && (B && A) *)
-(* let e = Binop (And, Binop (And, Var "a", Var "b"), Binop (And, Var "b", Var "a"));;
-assert_equal_str "(a && b) && (b && a)" ("a && b") (to_string (simplify e));; *)
+let all_tests () =
 
-(* 11. A + A'B = A + B *)
+    (* A && A && B  *)
+    let e = Binop (And, Binop (And, Var "a", Var "a"), Var "b") in
+    assert_equal_str "Associative: a && a && b" ("a && b") (to_string (simplify e));
+   
+    (* B && A && A  *)
+    let e = Binop (And, Binop (And, Var "b", Var "a"), Var "a") in
+    assert_equal_str "Associative: b && a && a" ("b && a") (to_string (simplify e));
+    (* A && A && B  *)
+    let e = Binop (And, Var "a", Binop (And, Var "a", Var "b")) in
+    assert_equal_str "Associative: a && a && b" ("a && b") (to_string (simplify e));
+    (* A && B && A  *)
+    let e = Binop (And, Binop (And, Var "a", Var "b"), Var "a") in
+    assert_equal_str "Commutative: a && b && a" ("b && a") (to_string (simplify e));
+    (* A && B || A  *)
+    let e = Binop (Or, Binop (And, Var "a", Var "b"), Var "a") in
+    assert_equal_str "Commutative: a && b || a" ("b || a") (to_string (simplify e));
+    (* (A && B) && (A && B) *)
+    let e = Binop (And, Binop (And, Var "a", Var "b"), Binop (And, Var "a", Var "b")) in
+    assert_equal_str "(a && b) && (a && b)" ("a && b") (to_string (simplify e));
+    (* (A && B) && (B && A) *)
+    (* let e = Binop (And, Binop (And, Var "a", Var "b"), Binop (And, Var "b", Var "a"));
+    assert_equal_str "(a && b) && (b && a)" ("a && b") (to_string (simplify e));; *)
 
-
-(* Idempotent *)
-(* AA = A *)
-let e = Binop (And, Var "a", Var "a");;
-assert_equal_str "a && a == a" ("a") (to_string (simplify e));;
-(* A+A = A *)
-let e = Binop (Or, Var "a", Var "a");;
-assert_equal_str "a || a == a" ("a") (to_string (simplify e));;
-(* A+A+A = A *)
-let e = Binop (Or, Binop (Or, Var "a", Var "a"), Var "a");;
-assert_equal_str "a || a || a == a" ("a") (to_string (simplify e));;
-(* A+A+A+A = A *)
-let e = Binop (Or, Binop (Or, Var "a", Binop (Or, Var "a", Var "a")), Var "a");;
-assert_equal_str "a || a || a || a == a" ("a") (to_string (simplify e));;
+    (* 11. A + A'B = A + B *)
 
 
-(* !true *)
-let e = Uniop (Not, Bool true);;
-assert_equal_str "!true" ("!true") (to_string e);;
-assert_equal_str "!true" ("false") (to_string (eval e));;
-
-(* !true && true *)
-let e = Binop (And, Uniop (Not, Bool true), Bool true);;
-assert_equal_str "!true && true" ("!true && true") (to_string e);;
-assert_equal_str "eval !true && true" ("false") (to_string (eval e));;
-
-(* replace_val v repl expr *)
-let e = Binop (And, Var "x", Bool true);;
-assert_equal_str "replace_val true && true" ("true && true") (to_string (replace_val (Var "x") (Bool true) e));;
-
-(* x && y || z *)
-let e = Binop (Or, Binop(And, Var "x", Var "y"), Var "z");;
-assert_equal_str "x && y || z" ("x && y || z") (to_string e);;
-assert_equal_str "eval x && y || z" ("x && y || z") (to_string (eval e));;
+    (* Idempotent *)
+    (* AA = A *)
+    let e = Binop (And, Var "a", Var "a") in
+    assert_equal_str "a && a == a" ("a") (to_string (simplify e));
+    (* A+A = A *)
+    let e = Binop (Or, Var "a", Var "a") in
+    assert_equal_str "a || a == a" ("a") (to_string (simplify e));
+    (* A+A+A = A *)
+    let e = Binop (Or, Binop (Or, Var "a", Var "a"), Var "a") in
+    assert_equal_str "a || a || a == a" ("a") (to_string (simplify e));
+    (* A+A+A+A = A *)
+    let e = Binop (Or, Binop (Or, Var "a", Binop (Or, Var "a", Var "a")), Var "a") in
+    assert_equal_str "a || a || a || a == a" ("a") (to_string (simplify e));
 
 
-(* let x = true in x *)
-let e = Let ("x", Bool true, Var "x");;
-assert_equal_str "let x = true in x" ("let x = true in x") (to_string e);;
-assert_equal_str "eval let x = true in x" ("true") (to_string (eval e));;
+    (* !true *)
+    let e = Uniop (Not, Bool true) in
+    assert_equal_str "!true" ("!true") (to_string e);
+    assert_equal_str "!true" ("false") (to_string (eval e));
 
-(* let x = 1 + 4 in x * 3  *)
-let e = Let ("x", Binop (Add, Int 1, Int 4), Binop (Mult, Var "x", Int 3));;
-assert_equal_str "let x = 1 + 4 in x * 3" ("let x = 1 + 4 in x * 3") (to_string e);;
-assert_equal_str "eval let x = 1 + 4 in x * 3" ("15") (to_string (eval e));;
+    (* !true && true *)
+    let e = Binop (And, Uniop (Not, Bool true), Bool true) in
+    assert_equal_str "!true && true" ("!true && true") (to_string e);
+    assert_equal_str "eval !true && true" ("false") (to_string (eval e));
 
-(* let x = true in let y = false in x && y *)
-let e = Let ("x", Bool true, Let ("y", Bool false, Binop (And, Var "x", Var "y")));;
-assert_equal_str "let x = true in let y = false in x && y" ("let x = true in let y = false in x && y") (to_string e);;
-assert_equal_str "eval let x = true in let y = false in x && y" ("false") (to_string (eval e));;
+    (* replace_val v repl expr *)
+    let e = Binop (And, Var "x", Bool true) in
+    assert_equal_str "replace_val true && true" ("true && true") (to_string (replace_val (Var "x") (Bool true) e));
+
+    (* x && y || z *)
+    let e = Binop (Or, Binop(And, Var "x", Var "y"), Var "z") in
+    assert_equal_str "x && y || z" ("x && y || z") (to_string e);
+    assert_equal_str "eval x && y || z" ("x && y || z") (to_string (eval e));
 
 
-(* if true && true then true || false else false && false *)
-let e = If (
-    Binop (And, Bool true, Bool true), 
-    Binop (Or, Bool true, Bool false),
-    Binop (And, Bool false, Bool false));;
-assert_equal_str "if true && true then true || false else false && false" 
-                    ("if true && true then true || false else false && false") (to_string e);;
-assert_equal_str "eval if true && true then true || false else false && false" ("true") (to_string (eval e));;
+    (* let x = true in x *)
+    let e = Let ("x", Bool true, Var "x") in
+    assert_equal_str "let x = true in x" ("let x = true in x") (to_string e);
+    assert_equal_str "eval let x = true in x" ("true") (to_string (eval e));
 
-(* if true then true else false *)
-let e = If (Bool true, Bool true, Bool false);;
-assert_equal_str "if true then true else false" ("if true then true else false") (to_string e);;
-assert_equal_str "eval if true then true else false" ("true") (to_string (eval e));;
+    (* let x = 1 + 4 in x * 3  *)
+    let e = Let ("x", Binop (Add, Int 1, Int 4), Binop (Mult, Var "x", Int 3)) in
+    assert_equal_str "let x = 1 + 4 in x * 3" ("let x = 1 + 4 in x * 3") (to_string e);
+    assert_equal_str "eval let x = 1 + 4 in x * 3" ("15") (to_string (eval e));
 
-(* if false then true else false *)
-let e = If (Bool false, Bool true, Bool false);;
-assert_equal_str "if false then true else false" ("if false then true else false") (to_string e);;
-assert_equal_str "eval if false then true else false" ("false") (to_string (eval e));;
+    (* let x = true in let y = false in x && y *)
+    let e = Let ("x", Bool true, Let ("y", Bool false, Binop (And, Var "x", Var "y"))) in
+    assert_equal_str "let x = true in let y = false in x && y" ("let x = true in let y = false in x && y") (to_string e);
+    assert_equal_str "eval let x = true in let y = false in x && y" ("false") (to_string (eval e));
 
-(* if 1 then 1 else 2 *)
-let e = If (Int 1, Bool true, Bool false);;
-assert_equal_str "if 1 then true else false" ("if 1 then true else false") (to_string e);;
-assert_equal_str "eval if 1 then true else false" ("Error - Invalid if clause: if 1 then true else false") (to_string (eval e));;
 
-(* if false then 1 else 2 *)
-let e = If (Bool true, Int 1, Int 2);;
-assert_equal_str "if true then 1 else 2" ("if true then 1 else 2") (to_string e);;
-assert_equal_str "eval if true then 1 else 2" ("1") (to_string (eval e));;
+    (* if true && true then true || false else false && false *)
+    let e = If (
+        Binop (And, Bool true, Bool true), 
+        Binop (Or, Bool true, Bool false),
+        Binop (And, Bool false, Bool false)) in
+    assert_equal_str "if true && true then true || false else false && false" 
+                        ("if true && true then true || false else false && false") (to_string e);
+    assert_equal_str "eval if true && true then true || false else false && false" ("true") (to_string (eval e));
 
-(* true && true *)
-let e = Binop (And, Bool true, Bool true);;
-assert_equal_str "true and true" ("true && true") (to_string e);;
-assert_equal_str "eval true and true" ("true") (to_string (eval e));;
+    (* if true then true else false *)
+    let e = If (Bool true, Bool true, Bool false) in
+    assert_equal_str "if true then true else false" ("if true then true else false") (to_string e);
+    assert_equal_str "eval if true then true else false" ("true") (to_string (eval e));
 
-(* true && true && true *)
-let e = Binop (And, Bool true, Binop (And, Bool true, Bool true));;
-assert_equal_str "true and true and true" ("true && true && true") (to_string e);;
-assert_equal_str "eval true and true and true" ("true") (to_string (eval e));;
+    (* if false then true else false *)
+    let e = If (Bool false, Bool true, Bool false) in
+    assert_equal_str "if false then true else false" ("if false then true else false") (to_string e);
+    assert_equal_str "eval if false then true else false" ("false") (to_string (eval e));
 
-(* false || true *)
-let e = Binop (Or, Bool false, Bool true);;
-assert_equal_str "false or true" ("false || true") (to_string e);;
-assert_equal_str "eval false or true" ("true") (to_string (eval e));;
+    (* if 1 then 1 else 2 *)
+    let e = If (Int 1, Bool true, Bool false) in
+    assert_equal_str "if 1 then true else false" ("if 1 then true else false") (to_string e);
+    assert_equal_str "eval if 1 then true else false" ("Error - Invalid if clause: if 1 then true else false") (to_string (eval e));
 
-(* false || false || true *)
-let e = Binop (Or, Bool false, Binop (Or, Bool false, Bool true));;
-assert_equal_str "false or false or true" ("false || false || true") (to_string e);;
-assert_equal_str "eval false or false or true" ("true") (to_string (eval e));;
+    (* if false then 1 else 2 *)
+    let e = If (Bool true, Int 1, Int 2) in
+    assert_equal_str "if true then 1 else 2" ("if true then 1 else 2") (to_string e);
+    assert_equal_str "eval if true then 1 else 2" ("1") (to_string (eval e));
 
-(* Error: 1 + true *)
-let e = Binop (Add, Int 1, Bool true);;
-assert_equal_str "1 + true" ("1 + true") (to_string e);;
-assert_equal_str "eval 1 + true" ("Error - Invalid expr: 1 + true") (to_string (eval e));;
+    (* true && true *)
+    let e = Binop (And, Bool true, Bool true) in
+    assert_equal_str "true and true" ("true && true") (to_string e);
+    assert_equal_str "eval true and true" ("true") (to_string (eval e));
 
-(* 1 + 2 *)
-let e = Binop (Add, (Int 1), (Int 2));;
-assert_equal_str "1 + 2" ("1 + 2") (to_string e);;
-assert_equal_str "eval 1 + 2" ("3") (to_string (eval e));;
+    (* true && true && true *)
+    let e = Binop (And, Bool true, Binop (And, Bool true, Bool true)) in
+    assert_equal_str "true and true and true" ("true && true && true") (to_string e);
+    assert_equal_str "eval true and true and true" ("true") (to_string (eval e));
 
-(* 1 < 2 *)
-let e = Binop (Lte, (Int 1), (Int 2));;
-assert_equal_str "1 < 2" ("1 < 2") (to_string e);;
-assert_equal_str "eval 1 < 2" ("true") (to_string (eval e));;
+    (* false || true *)
+    let e = Binop (Or, Bool false, Bool true) in
+    assert_equal_str "false or true" ("false || true") (to_string e);
+    assert_equal_str "eval false or true" ("true") (to_string (eval e));
 
-print_endline "Pass."
+    (* false || false || true *)
+    let e = Binop (Or, Bool false, Binop (Or, Bool false, Bool true)) in
+    assert_equal_str "false or false or true" ("false || false || true") (to_string e);
+    assert_equal_str "eval false or false or true" ("true") (to_string (eval e));
+
+    (* Error: 1 + true *)
+    let e = Binop (Add, Int 1, Bool true) in
+    assert_equal_str "1 + true" ("1 + true") (to_string e);
+    assert_equal_str "eval 1 + true" ("Error - Invalid expr: 1 + true") (to_string (eval e));
+
+    (* 1 + 2 *)
+    let e = Binop (Add, (Int 1), (Int 2)) in
+    assert_equal_str "1 + 2" ("1 + 2") (to_string e);
+    assert_equal_str "eval 1 + 2" ("3") (to_string (eval e));
+
+    (* 1 < 2 *)
+    let e = Binop (Lte, (Int 1), (Int 2)) in
+    assert_equal_str "1 < 2" ("1 < 2") (to_string e);
+    assert_equal_str "eval 1 < 2" ("true") (to_string (eval e));
+in
+all_tests ();
+
+print_endline "Pass.";
